@@ -41,8 +41,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./k8s/jupyterhub-configmap.yaml:/srv/jupyterhub/jupyterhub_config.yaml:ro
-    command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.yaml"]
+      - ./jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py:ro
+    command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.py"]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jupyterhub.rule=Host(`localhost`)"
