@@ -1,13 +1,9 @@
 version: '3.8'
 services:
   redis:
-    build:
-      context: .
-      dockerfile: redis.Dockerfile
+    image: redis:7.2-alpine
     container_name: redis
     restart: unless-stopped
-    environment:
-      - REDIS_PASSWORD=your-redis-password
     command: ["redis-server", "--requirepass", "your-redis-password"]
     ports:
       - "6379:6379"
