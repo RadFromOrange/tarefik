@@ -1,3 +1,5 @@
+import os
+
 c = get_config()
 
 # Use KubeSpawner
@@ -9,7 +11,8 @@ c.KubeSpawner.cmd = ["/openvscode-server/bin/openvscode-server", "--host=0.0.0.0
 c.JupyterHub.proxy_class = 'jupyterhub_traefik_proxy.redis.TraefikRedisProxy'
 c.TraefikRedisProxy.traefik_api_url = 'http://traefik-proxy:8080'
 c.TraefikRedisProxy.traefik_api_password = 'your-traefik-api-password'
-c.TraefikRedisProxy.redis_url = 'redis://:test@redis:6379'
+redis_password = os.environ.get('REDIS_PASSWORD', 'test')
+c.TraefikRedisProxy.redis_url = f'redis://:{redis_password}@redis:6379'
 c.TraefikRedisProxy.should_start = False
 
 # Use DummyAuthenticator for testing

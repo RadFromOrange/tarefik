@@ -31,6 +31,7 @@ services:
     restart: unless-stopped
     environment:
       - JUPYTERHUB_CRYPT_KEY=your-crypt-key
+      - REDIS_PASSWORD=test
     depends_on:
       - redis
       - traefik
