@@ -1,8 +1,8 @@
-# Simple Dockerfile for Redis with password protection
-FROM redis:7.2-alpine
+FROM redis:latest
 
-# Set the Redis password (change as needed)
-ENV REDIS_PASSWORD=your-redis-password
+COPY redis.conf /etc/redis/redis.conf
+COPY users.acl /etc/redis/users.acl
 
-# Start Redis with password requirement
-CMD ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+EXPOSE 6379
+
+CMD ["redis-server", "/etc/redis/redis.conf","--notify-keyspace-events","KEA"]

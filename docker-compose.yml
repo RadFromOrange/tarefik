@@ -1,35 +1,36 @@
 version: '3.8'
 services:
-  redis:
-    image: redis:7.2-alpine
-    container_name: redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    networks:
-      - web
-
   traefik:
     image: traefik:v2.11
     container_name: traefik
+    extra_hosts:
+      - "docker.host.internal:host-gateway"
     command:
-      - --providers.docker
+      # Enable Docker provider for container discovery
+      - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.redis.endpoints=redis:6379
-      - --entrypoints.http.address=:80
-      - --entrypoints.websecure.address=:443
-      - --entrypoints.auth_api.address=:8081  # Add the missing entry point
+
+      # Redis provider for JupyterHub proxy
+      - --providers.redis.endpoints=docker.host.internal:6379
+      - --providers.redis.password=another-secret
+      - --providers.redis.username=TOUFIK
+      - --providers.redis.rootKey=traefik
+
+      # Define entrypoints - this is crucial for routing
+      - --entrypoints.web.address=:8000
+
+      # API and dashboard for debugging
       - --api.insecure=true
       - --api.dashboard=true
+
+      # Logging for debugging
+      - --log.level=DEBUG
+      - --accesslog=true
     ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080" # Traefik dashboard
-      - "8081:8081" # JupyterHub API entry point
+      - "8022:8000"  # External port 8022 maps to internal port 8000
+      - "8080:8080"  # Traefik dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    depends_on:
-      - redis
     networks:
       - web
 
@@ -37,27 +38,18 @@ services:
     build:
       context: ./jupyterhub
     container_name: jupyterhub
+    extra_hosts:
+      - "docker.host.internal:host-gateway"
     restart: unless-stopped
     environment:
       - JUPYTERHUB_CRYPT_KEY=your-crypt-key
     depends_on:
-      - redis
       - traefik
     ports:
-      - "8000:8000"
+      - "8081:8081"  # JupyterHub hub port
     volumes:
       - ./jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py:ro
     command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.py"]
-    networks:
-      - web
-
-  user:
-    build:
-      context: ./user-image
-    container_name: user
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=false"
     networks:
       - web
 

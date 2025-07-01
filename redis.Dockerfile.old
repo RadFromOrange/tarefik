@@ -1,0 +1,10 @@
+FROM redis:7.2-alpine
+
+ENV REDIS_PASSWORD=your-redis-password
+ENV ACL_USERNAME=TOUFIK
+ENV ACL_PASSWORD=another-secret
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]
