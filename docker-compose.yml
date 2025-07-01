@@ -4,7 +4,6 @@ services:
     image: redis:7.2-alpine
     container_name: redis
     restart: unless-stopped
-    command: ["redis-server", "--requirepass", "test"]
     ports:
       - "6379:6379"
 
@@ -31,7 +30,6 @@ services:
     restart: unless-stopped
     environment:
       - JUPYTERHUB_CRYPT_KEY=your-crypt-key
-      - REDIS_PASSWORD=test
     depends_on:
       - redis
       - traefik
