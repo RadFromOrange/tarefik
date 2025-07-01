@@ -4,7 +4,6 @@ services:
     image: redis:7.2-alpine
     container_name: redis
     restart: unless-stopped
-    command: ["redis-server", "--requirepass", "test"]
     ports:
       - "6379:6379"
 
