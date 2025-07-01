@@ -9,8 +9,8 @@ data:
 
     # Use KubeSpawner
     c.JupyterHub.spawner_class = 'kubespawner.KubeSpawner'
-    c.KubeSpawner.image = 'your-user-image:latest'
-    c.KubeSpawner.cmd = ["/usr/bin/code-server", "--auth", "none", "--bind-addr", "0.0.0.0:8080"]
+    c.KubeSpawner.image = 'gitpod/openvscode-server:latest'
+    c.KubeSpawner.cmd = ["/openvscode-server/bin/openvscode-server", "--host=0.0.0.0", "--without-connection-token"]
 
     # Traefik-Redis-Proxy configuration
     c.JupyterHub.proxy_class = 'jupyterhub_traefik_proxy.redis.TraefikRedisProxy'
