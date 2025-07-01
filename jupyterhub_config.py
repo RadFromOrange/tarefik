@@ -10,8 +10,6 @@ c.KubeSpawner.cmd = ["/openvscode-server/bin/openvscode-server", "--host=0.0.0.0
 # Traefik-Redis-Proxy configuration
 c.JupyterHub.proxy_class = 'jupyterhub_traefik_proxy.redis.TraefikRedisProxy'
 c.TraefikProxy.traefik_api_url = 'http://traefik:8080'
-c.TraefikProxy.traefik_api_username = 'admin'
-c.TraefikProxy.traefik_api_password = 'your-traefik-api-password'
 c.TraefikProxy.redis_url = 'redis://:your-redis-password@redis:6379/0'
 c.TraefikProxy.should_start = False
 
