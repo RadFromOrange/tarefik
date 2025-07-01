@@ -1,0 +1,58 @@
+version: '3.8'
+services:
+  redis:
+    build:
+      context: .
+      dockerfile: redis.Dockerfile
+    container_name: redis
+    restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=your-redis-password
+    command: ["redis-server", "--requirepass", "your-redis-password"]
+    ports:
+      - "6379:6379"
+
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik
+    command:
+      - --providers.docker
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --api.insecure=true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080" # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  jupyterhub:
+    build:
+      context: ./jupyterhub
+    container_name: jupyterhub
+    restart: unless-stopped
+    environment:
+      - JUPYTERHUB_CRYPT_KEY=your-crypt-key
+    depends_on:
+      - redis
+      - traefik
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./k8s/jupyterhub-configmap.yaml:/srv/jupyterhub/jupyterhub_config.yaml:ro
+    command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.yaml"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jupyterhub.rule=Host(`localhost`)"
+      - "traefik.http.routers.jupyterhub.entrypoints=web"
+      - "traefik.http.services.jupyterhub.loadbalancer.server.port=8000"
+
+  user:
+    build:
+      context: ./user-image
+    container_name: user
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
