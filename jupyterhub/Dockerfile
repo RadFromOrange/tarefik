@@ -6,5 +6,3 @@ USER root
 RUN pip install \
     jupyterhub-kubespawner \
     jupyterhub-traefik-proxy[redis]
-
-USER jovyan
