@@ -1,0 +1,4 @@
+# Redis values.yaml (snippet)
+auth:
+  enabled: true
+  password: your-redis-password

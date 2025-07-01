@@ -1,0 +1,6 @@
+# Traefik values.yaml (snippet)
+additionalArguments:
+  - "--providers.kubernetescrd"
+  - "--entrypoints.web.address=:80"
+  - "--entrypoints.websecure.address=:443"
+  - "--api.insecure=true"

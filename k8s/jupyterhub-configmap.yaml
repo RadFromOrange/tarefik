@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jupyterhub-config
+  namespace: jupyterhub
+data:
+  jupyterhub_config.py: |
+    c = get_config()
+
+    # Use KubeSpawner
+    c.JupyterHub.spawner_class = 'kubespawner.KubeSpawner'
+    c.KubeSpawner.image = 'your-user-image:latest'
+    c.KubeSpawner.cmd = ["/usr/bin/code-server", "--auth", "none", "--bind-addr", "0.0.0.0:8080"]
+
+    # Traefik-Redis-Proxy configuration
+    c.JupyterHub.proxy_class = 'jupyterhub_traefik_proxy.redis.TraefikRedisProxy'
+    c.TraefikProxy.traefik_api_url = 'http://traefik-proxy:8080'
+    c.TraefikProxy.traefik_api_password = 'your-traefik-api-password'
+    c.TraefikProxy.redis_url = 'redis://:your-redis-password@redis:6379/0'
+    c.TraefikProxy.provider = 'kubernetescrd'
+    c.TraefikProxy.service_name = 'traefik-proxy'
+    c.TraefikProxy.tls_verify = False
+
+    # Other JupyterHub settings
+    c.JupyterHub.hub_connect_ip = '0.0.0.0'
+    c.JupyterHub.hub_ip = '0.0.0.0'
+    c.JupyterHub.hub_port = 8081
+    c.JupyterHub.allow_named_servers = True
+    c.JupyterHub.admin_access = True
+
+    # Example: set admin users
+    c.Authenticator.admin_users = {'adminuser'}
