@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    networks:
+      - web
 
   traefik:
     image: traefik:v2.11
@@ -22,6 +24,8 @@ services:
       - "8080:8080" # Traefik dashboard
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - web
 
   jupyterhub:
     build:
@@ -43,6 +47,8 @@ services:
       - "traefik.http.routers.jupyterhub.rule=Host(`localhost`)"
       - "traefik.http.routers.jupyterhub.entrypoints=http"
       - "traefik.http.services.jupyterhub.loadbalancer.server.port=8000"
+    networks:
+      - web
 
   user:
     build:
@@ -51,3 +57,9 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=false"
+    networks:
+      - web
+
+networks:
+  web:
+    driver: bridge
