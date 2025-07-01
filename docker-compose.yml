@@ -15,19 +15,21 @@ services:
     command:
       - --providers.docker
       - --providers.docker.exposedbydefault=false
-      - --providers.redis.endpoints=redis:6379  # This tells Traefik to read routes from Redis
+      - --providers.redis.endpoints=redis:6379
       - --entrypoints.http.address=:80
       - --entrypoints.websecure.address=:443
+      - --entrypoints.auth_api.address=:8081  # Add the missing entry point
       - --api.insecure=true
-      - --api.dashboard=true  # Explicitly enable the dashboard for better debugging
+      - --api.dashboard=true
     ports:
       - "80:80"
       - "443:443"
       - "8080:8080" # Traefik dashboard
+      - "8081:8081" # JupyterHub API entry point
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
-      - redis  # Ensure Redis starts before Traefik
+      - redis
     networks:
       - web
 
@@ -46,7 +48,6 @@ services:
     volumes:
       - ./jupyterhub_config.py:/srv/jupyterhub/jupyterhub_config.py:ro
     command: ["jupyterhub", "-f", "/srv/jupyterhub/jupyterhub_config.py"]
-    # Remove Traefik labels since JupyterHub will register routes via Redis
     networks:
       - web
 
