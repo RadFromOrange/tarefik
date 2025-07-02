@@ -1,0 +1,77 @@
+FROM debian:12-slim
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV HOME=/home/coder
+ENV OPENVSCODE_SERVER_ROOT=/home/coder
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    sudo \
+    ca-certificates \
+    dumb-init \
+    htop \
+    locales \
+    man \
+    nano \
+    openssh-client \
+    procps \
+    vim \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up locale
+RUN sed -i "s/# en_US.UTF-8/en_US.UTF-8/" /etc/locale.gen \
+    && locale-gen
+ENV LANG=en_US.UTF-8
+
+# Create coder user
+RUN useradd -u 1000 -m -s /bin/bash coder \
+    && echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Create necessary directories
+RUN mkdir -p /home/coder/.local/share/code-server/{User,Machine,extensions,logs} \
+    && mkdir -p /home/coder/workspace
+
+# Download and install code-server
+# Replace VERSION with the actual version you want (e.g., 4.101.2)
+ARG CODE_SERVER_VERSION=4.101.2
+RUN wget -O /tmp/code-server.tar.gz \
+    "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz" \
+    && cd /home/coder \
+    && tar -xzf /tmp/code-server.tar.gz \
+    && mv code-server-${CODE_SERVER_VERSION}-linux-amd64 .code-server \
+    && rm /tmp/code-server.tar.gz
+
+# Set ownership
+RUN chown -R coder:coder /home/coder
+
+# Create startup script
+RUN echo '#!/bin/bash' > /home/coder/start-code-server.sh && \
+    echo 'mkdir -p /home/coder/.local/share/code-server/{User,Machine,extensions,logs}' >> /home/coder/start-code-server.sh && \
+    echo 'exec /home/coder/.code-server/bin/code-server \' >> /home/coder/start-code-server.sh && \
+    echo '    --bind-addr 0.0.0.0:3000 \' >> /home/coder/start-code-server.sh && \
+    echo '    --user-data-dir /home/coder/.local/share/code-server \' >> /home/coder/start-code-server.sh && \
+    echo '    --extensions-dir /home/coder/.local/share/code-server/extensions \' >> /home/coder/start-code-server.sh && \
+    echo '    --disable-telemetry \' >> /home/coder/start-code-server.sh && \
+    echo '    --auth none \' >> /home/coder/start-code-server.sh && \
+    echo '    "$@"' >> /home/coder/start-code-server.sh
+
+RUN chmod +x /home/coder/start-code-server.sh \
+    && chown coder:coder /home/coder/start-code-server.sh
+
+# Switch to coder user
+USER coder
+WORKDIR /home/coder
+
+# Expose port
+EXPOSE 3000
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+
+# Default command
+CMD ["/home/coder/start-code-server.sh"]
