@@ -1,0 +1,426 @@
+#!/usr/bin/env bash
+#-------------------------------------------------------------------------------------------------------------
+# Lightweight Desktop Feature Installation Script
+# Compatible with read-only filesystems (only /home/coder and /tmp writable)
+#-------------------------------------------------------------------------------------------------------------
+
+set -e
+
+# Feature toggles with defaults
+ENABLE_DESKTOP="${ENABLE_DESKTOP:-false}"
+ENABLE_NOVNC="${ENABLE_NOVNC:-true}"
+ENABLE_BROWSER="${ENABLE_BROWSER:-false}"
+ENABLE_TILIX="${ENABLE_TILIX:-false}"
+ENABLE_FONTS="${ENABLE_FONTS:-true}"
+
+# Configuration
+NOVNC_VERSION="${NOVNC_VERSION:-1.6.0}"
+VNC_PASSWORD="${VNC_PASSWORD:-vscode}"
+NOVNC_PORT="${NOVNC_PORT:-6080}"
+VNC_PORT="${VNC_PORT:-5901}"
+USERNAME="${USERNAME:-coder}"
+WEBSOCKETIFY_VERSION=0.10.0
+
+# Check if desktop feature is enabled
+if [ "$ENABLE_DESKTOP" != "true" ]; then
+    echo "Desktop feature is disabled. Set ENABLE_DESKTOP=true to enable."
+    exit 0
+fi
+
+echo "Installing lightweight desktop feature..."
+
+# Validate we're running as root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Script must be run as root. Use sudo or run as root user."
+    exit 1
+fi
+
+# Core desktop packages (minimal set)
+CORE_PACKAGES="
+    tigervnc-standalone-server
+    tigervnc-common
+    fluxbox
+    dbus-x11
+    x11-utils
+    x11-xserver-utils
+    xdg-utils
+    at-spi2-core
+    xterm
+    nautilus
+    mousepad
+    gnome-keyring
+    libnotify4
+    libnss3
+    libxss1
+    htop
+    curl
+    ca-certificates
+    nano
+    locales"
+
+# Additional packages based on feature toggles
+ADDITIONAL_PACKAGES=""
+
+if [ "$ENABLE_TILIX" = "true" ]; then
+    ADDITIONAL_PACKAGES="$ADDITIONAL_PACKAGES tilix"
+fi
+
+if [ "$ENABLE_FONTS" = "true" ]; then
+    ADDITIONAL_PACKAGES="$ADDITIONAL_PACKAGES fonts-noto fonts-wqy-microhei fonts-droid-fallback"
+fi
+
+# Tools package for vncpasswd
+TOOLS_PACKAGES="tigervnc-tools"
+
+# Clean up and update
+rm -rf /var/lib/apt/lists/*
+export DEBIAN_FRONTEND=noninteractive
+
+apt_get_update() {
+    if [ "$(find /var/lib/apt/lists/* 2>/dev/null | wc -l)" = "0" ]; then
+        echo "Running apt-get update..."
+        apt-get update -y
+    fi
+}
+
+check_packages() {
+    if ! dpkg -s "$@" > /dev/null 2>&1; then
+        apt_get_update
+        apt-get -y install --no-install-recommends "$@"
+    fi
+}
+
+echo "Installing core desktop packages..."
+apt_get_update
+check_packages $CORE_PACKAGES
+
+# Install additional packages if enabled
+if [ -n "$ADDITIONAL_PACKAGES" ]; then
+    echo "Installing additional packages: $ADDITIONAL_PACKAGES"
+    check_packages $ADDITIONAL_PACKAGES
+fi
+
+# Install tools if vncpasswd is missing
+if ! type vncpasswd > /dev/null 2>&1; then
+    echo "Installing VNC tools..."
+    check_packages $TOOLS_PACKAGES
+fi
+
+# Handle audio libraries for different Ubuntu versions
+. /etc/os-release
+if [ "${ID}" = "ubuntu" ] && [ "${VERSION_CODENAME}" = "noble" ]; then
+    check_packages "libasound2-dev"
+else 
+    check_packages "libasound2"
+fi
+
+# Install emoji fonts if available
+if [ "$ENABLE_FONTS" = "true" ]; then
+    if dpkg-query -W fonts-noto-color-emoji > /dev/null 2>&1 && ! dpkg -s fonts-noto-color-emoji > /dev/null 2>&1; then
+        apt-get -y install --no-install-recommends fonts-noto-color-emoji
+    fi
+fi
+
+# Ensure locale exists
+if ! grep -o -E '^\s*en_US.UTF-8\s+UTF-8' /etc/locale.gen > /dev/null 2>&1; then
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+    locale-gen
+fi
+
+# Install Cascadia Code fonts to /tmp (since other locations are read-only)
+if [ "$ENABLE_FONTS" = "true" ]; then
+    echo "Installing Cascadia Code fonts to /tmp..."
+    mkdir -p /tmp/fonts/cascadia
+    curl -sSL https://github.com/microsoft/cascadia-code/releases/download/v2008.25/CascadiaCode-2008.25.zip -o /tmp/cascadia-fonts.zip
+    unzip -q /tmp/cascadia-fonts.zip -d /tmp/cascadia-fonts
+    mv /tmp/cascadia-fonts/ttf/* /tmp/fonts/cascadia/
+    rm -rf /tmp/cascadia-fonts.zip /tmp/cascadia-fonts
+fi
+
+# Install noVNC to /tmp (since /usr/local is read-only)
+if [ "$ENABLE_NOVNC" = "true" ]; then
+    echo "Installing noVNC to /tmp..."
+    mkdir -p /tmp/novnc
+    curl -sSL https://github.com/novnc/noVNC/archive/v${NOVNC_VERSION}.zip -o /tmp/novnc-install.zip
+    unzip -q /tmp/novnc-install.zip -d /tmp/novnc
+    cp /tmp/novnc/noVNC-${NOVNC_VERSION}/vnc.html /tmp/novnc/noVNC-${NOVNC_VERSION}/index.html
+    
+    curl -sSL https://github.com/novnc/websockify/archive/v${WEBSOCKETIFY_VERSION}.zip -o /tmp/websockify-install.zip
+    unzip -q /tmp/websockify-install.zip -d /tmp/novnc
+    ln -s /tmp/novnc/websockify-${WEBSOCKETIFY_VERSION} /tmp/novnc/noVNC-${NOVNC_VERSION}/utils/websockify
+    rm -f /tmp/websockify-install.zip /tmp/novnc-install.zip
+    
+    # Install noVNC dependencies
+    check_packages python3-minimal python3-numpy
+    sed -i -E 's/^python /python3 /' /tmp/novnc/websockify-${WEBSOCKETIFY_VERSION}/run
+fi
+
+# Create directories that we can write to
+mkdir -p /tmp/desktop-scripts
+mkdir -p /tmp/desktop-config
+mkdir -p /home/${USERNAME}/.fluxbox
+
+# Create resolution setting script in /tmp
+cat << 'EOF' > /tmp/desktop-scripts/set-resolution
+#!/bin/bash
+RESOLUTION=${1:-${VNC_RESOLUTION:-1920x1080}}
+DPI=${2:-${VNC_DPI:-96}}
+IGNORE_ERROR=${3:-"false"}
+
+if [ -z "$1" ]; then
+    echo -e "**Current Settings **\n"
+    xrandr
+    echo -n -e "\nEnter new resolution (WIDTHxHEIGHT, blank for ${RESOLUTION}, Ctrl+C to abort).\n> "
+    read NEW_RES
+    if [ "${NEW_RES}" != "" ]; then
+        RESOLUTION=${NEW_RES}
+    fi
+    if ! echo "${RESOLUTION}" | grep -E '[0-9]+x[0-9]+' > /dev/null; then
+        echo -e "\nInvalid resolution format!\n"
+        exit 1
+    fi
+    if [ -z "$2" ]; then
+        echo -n -e "\nEnter new DPI (blank for ${DPI}, Ctrl+C to abort).\n> "
+        read NEW_DPI
+        if [ "${NEW_DPI}" != "" ]; then
+            DPI=${NEW_DPI}
+        fi
+    fi
+fi
+
+xrandr --fb ${RESOLUTION} --dpi ${DPI} > /dev/null 2>&1
+
+if [ $? -ne 0 ] && [ "${IGNORE_ERROR}" != "true" ]; then
+    echo -e "\nFAILED TO SET RESOLUTION!\n"
+    exit 1
+fi
+
+echo -e "\nSuccess!\n"
+EOF
+
+# Create main desktop initialization script
+cat << 'EOF' > /tmp/desktop-scripts/desktop-init.sh
+#!/bin/bash
+
+USERNAME=${USERNAME:-coder}
+VNC_PASSWORD=${VNC_PASSWORD:-vscode}
+NOVNC_PORT=${NOVNC_PORT:-6080}
+VNC_PORT=${VNC_PORT:-5901}
+
+LOG=/tmp/desktop-init.log
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-autolaunch:}"
+export DISPLAY="${DISPLAY:-:1}"
+export VNC_RESOLUTION="${VNC_RESOLUTION:-1440x768x16}"
+export LANG="${LANG:-en_US.UTF-8}"
+export LANGUAGE="${LANGUAGE:-en_US.UTF-8}"
+
+# Add custom fonts to font path if available
+if [ -d "/tmp/fonts" ]; then
+    export FONTCONFIG_PATH="/tmp/fonts:${FONTCONFIG_PATH}"
+fi
+
+startInBackgroundIfNotRunning() {
+    log "Starting $1."
+    echo -e "\n** $(date) **" >> /tmp/$1.log
+    if ! pgrep -x $1 > /dev/null; then
+        keepRunningInBackground "$@"
+        while ! pgrep -x $1 > /dev/null; do
+            sleep 1
+        done
+        log "$1 started."
+    else
+        echo "$1 is already running." >> /tmp/$1.log
+        log "$1 is already running."
+    fi
+}
+
+keepRunningInBackground() {
+    ($2 bash -c "while :; do echo [\$(date)] Process started.; $3; echo [\$(date)] Process exited!; sleep 5; done 2>&1" >> /tmp/$1.log & echo "$!" > /tmp/$1.pid)
+}
+
+sudoIf() {
+    if [ "$(id -u)" -ne 0 ]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
+sudoUserIf() {
+    if [ "$(id -u)" -eq 0 ] && [ "${USERNAME}" != "root" ]; then
+        sudo -u ${USERNAME} "$@"
+    else
+        "$@"
+    fi
+}
+
+log() {
+    echo -e "[$(date)] $@" >> $LOG
+}
+
+version_gt() {
+    [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" != "$1" ]
+}
+
+log "** DESKTOP INIT START **"
+
+# Initialize fluxbox config for user
+setup_fluxbox_config() {
+    local config_dir="/home/${USERNAME}/.fluxbox"
+    mkdir -p "${config_dir}"
+    
+    # Create basic fluxbox configuration
+    cat > "${config_dir}/init" << 'FLUXBOX_INIT'
+session.configVersion: 13
+session.menuFile: ~/.fluxbox/menu
+session.keyFile: ~/.fluxbox/keys
+session.styleFile: /usr/share/fluxbox/styles/qnx-photon
+session.screen0.workspaces: 1
+session.screen0.workspacewarping: false
+session.screen0.toolbar.widthPercent: 100
+session.screen0.strftimeFormat: %a %l:%M %p
+session.screen0.toolbar.tools: RootMenu, clock, iconbar, systemtray
+session.screen0.workspaceNames: One,
+FLUXBOX_INIT
+
+    cat > "${config_dir}/menu" << 'FLUXBOX_MENU'
+[begin] (Application Menu)
+    [exec] (File Manager) { nautilus ~ } <>
+    [exec] (Text Editor) { mousepad } <>
+    [exec] (Terminal) { xterm } <>
+    [submenu] (System) {}
+        [exec] (Set Resolution) { xterm -T "Set Resolution" -e /tmp/desktop-scripts/set-resolution } <>
+        [exec] (Top Processes) { xterm -T "Top" -e htop } <>
+        [exec] (Edit Application Menu) { mousepad ~/.fluxbox/menu } <>
+    [end]
+    [config] (Configuration)
+    [workspaces] (Workspaces)
+[end]
+FLUXBOX_MENU
+
+    # Set ownership
+    chown -R ${USERNAME}:${USERNAME} "${config_dir}" 2>/dev/null || true
+}
+
+# Setup fluxbox configuration
+setup_fluxbox_config
+
+# Start dbus
+log 'Starting dbus service.'
+if [ -f "/var/run/dbus/pid" ] && ! pgrep -x dbus-daemon > /dev/null; then
+    rm -f /var/run/dbus/pid 2>/dev/null || true
+fi
+/etc/init.d/dbus start 2>&1 >> /tmp/dbus-daemon-system.log
+while ! pgrep -x dbus-daemon > /dev/null; do
+    sleep 1
+done
+
+# Setup VNC
+rm -rf /tmp/.X11-unix /tmp/.X*-lock 2>/dev/null || true
+mkdir -p /tmp/.X11-unix
+chmod 1777 /tmp/.X11-unix
+
+if [ "$(echo "${VNC_RESOLUTION}" | tr -cd 'x' | wc -c)" = "1" ]; then 
+    VNC_RESOLUTION=${VNC_RESOLUTION}x16
+fi
+screen_geometry="${VNC_RESOLUTION%*x*}"
+screen_depth="${VNC_RESOLUTION##*x}"
+
+common_options="tigervncserver ${DISPLAY} -geometry ${screen_geometry} -depth ${screen_depth} -rfbport ${VNC_PORT} -dpi ${VNC_DPI:-96} -localhost -desktop fluxbox -fg"
+
+# Start VNC server
+if [ -n "${VNC_PASSWORD+x}" ] && [ "${VNC_PASSWORD}" != "noPassword" ]; then
+    echo "${VNC_PASSWORD}" | vncpasswd -f > /tmp/vnc-passwd
+    startInBackgroundIfNotRunning "Xtigervnc" sudoUserIf "${common_options} -passwd /tmp/vnc-passwd"
+else
+    startInBackgroundIfNotRunning "Xtigervnc" sudoUserIf "${common_options} -SecurityTypes None"
+fi
+
+# Start noVNC if available
+if [ -d "/tmp/novnc" ] && [ "$ENABLE_NOVNC" = "true" ]; then
+    NOVNC_VERSION=${NOVNC_VERSION:-1.6.0}
+    if [ "$(ps -ef | grep /tmp/novnc/noVNC*/utils/launch.sh | grep -v grep)" = "" ] && [ "$(ps -ef | grep /tmp/novnc/noVNC*/utils/novnc_proxy | grep -v grep)" = "" ]; then
+        if version_gt "${NOVNC_VERSION}" "1.2.0"; then
+            keepRunningInBackground "noVNC" sudoIf "/tmp/novnc/noVNC*/utils/novnc_proxy --listen ${NOVNC_PORT} --vnc localhost:${VNC_PORT}"
+            log "noVNC started with novnc_proxy."
+        else
+            keepRunningInBackground "noVNC" sudoIf "/tmp/novnc/noVNC*/utils/launch.sh --listen ${NOVNC_PORT} --vnc localhost:${VNC_PORT}"
+            log "noVNC started with launch.sh."
+        fi
+    else
+        log "noVNC is already running."
+    fi
+fi
+
+log "** DESKTOP INIT COMPLETE **"
+
+# Execute any passed command
+if [ -n "$1" ]; then
+    log "Executing \"$@\"."
+    exec "$@"
+else
+    log "No command provided, keeping container running."
+    # Keep container alive
+    while true; do sleep 30; done
+fi
+EOF
+
+# Make scripts executable
+chmod +x /tmp/desktop-scripts/set-resolution
+chmod +x /tmp/desktop-scripts/desktop-init.sh
+
+# Create environment setup script
+cat << EOF > /tmp/desktop-scripts/setup-env.sh
+#!/bin/bash
+# Set up environment variables for desktop session
+export DISPLAY=\${DISPLAY:-:1}
+export VNC_RESOLUTION=\${VNC_RESOLUTION:-1440x768x16}
+export LANG=\${LANG:-en_US.UTF-8}
+export LANGUAGE=\${LANGUAGE:-en_US.UTF-8}
+
+# Add custom fonts to path if available
+if [ -d "/tmp/fonts" ]; then
+    export FONTCONFIG_PATH="/tmp/fonts:\${FONTCONFIG_PATH}"
+fi
+
+# Add desktop scripts to PATH
+export PATH="/tmp/desktop-scripts:\$PATH"
+EOF
+
+chmod +x /tmp/desktop-scripts/setup-env.sh
+
+# Clean up
+rm -rf /var/lib/apt/lists/*
+
+# Display completion message
+echo ""
+echo "========================================"
+echo "Desktop feature installation complete!"
+echo "========================================"
+echo ""
+echo "Features installed:"
+echo "- Core desktop: YES"
+echo "- noVNC: $ENABLE_NOVNC"
+echo "- Browser support: $ENABLE_BROWSER"
+echo "- Tilix terminal: $ENABLE_TILIX"
+echo "- Extra fonts: $ENABLE_FONTS"
+echo ""
+echo "Configuration:"
+echo "- VNC Port: $VNC_PORT"
+echo "- noVNC Port: $NOVNC_PORT"
+echo "- Username: $USERNAME"
+echo ""
+echo "To start the desktop environment:"
+echo "  /tmp/desktop-scripts/desktop-init.sh"
+echo ""
+echo "To access:"
+echo "- Via web browser: http://localhost:$NOVNC_PORT"
+echo "- Via VNC client: localhost:$VNC_PORT"
+echo ""
+if [ "${VNC_PASSWORD}" != "noPassword" ]; then
+    echo "VNC Password: $VNC_PASSWORD"
+else
+    echo "VNC Password: None required"
+fi
+echo ""
+EOF
