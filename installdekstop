@@ -424,3 +424,136 @@ else
 fi
 echo ""
 EOF
+
+
+
+---------------------------------------------- NNNN
+
+
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # Development container with desktop disabled
+  dev-container:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENABLE_DESKTOP: "false"
+        USERNAME: "coder"
+    volumes:
+      - ./workspace:/home/coder/workspace
+      - /tmp:/tmp
+    ports:
+      - "8080:8080"
+    user: "1000:1000"
+    command: ["bash"]
+
+  # Development container with basic desktop
+  dev-container-desktop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENABLE_DESKTOP: "true"
+        ENABLE_NOVNC: "true"
+        ENABLE_BROWSER: "false"
+        ENABLE_TILIX: "false"
+        ENABLE_FONTS: "true"
+        VNC_PASSWORD: "mypassword"
+        NOVNC_PORT: "6080"
+        VNC_PORT: "5901"
+        USERNAME: "coder"
+    volumes:
+      - ./workspace:/home/coder/workspace
+      - /tmp:/tmp
+    ports:
+      - "6080:6080"  # noVNC web interface
+      - "5901:5901"  # VNC direct connection
+      - "8080:8080"  # Your application port
+    user: "1000:1000"
+    entrypoint: ["/tmp/desktop-scripts/desktop-init.sh"]
+    command: ["bash"]
+
+  # Full-featured desktop container
+  dev-container-full:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENABLE_DESKTOP: "true"
+        ENABLE_NOVNC: "true"
+        ENABLE_BROWSER: "true"
+        ENABLE_TILIX: "true"
+        ENABLE_FONTS: "true"
+        VNC_PASSWORD: "fulldesktop"
+        NOVNC_PORT: "6080"
+        VNC_PORT: "5901"
+        USERNAME: "coder"
+    volumes:
+      - ./workspace:/home/coder/workspace
+      - /tmp:/tmp
+    ports:
+      - "6080:6080"
+      - "5901:5901"
+      - "8080:8080"
+    user: "1000:1000"
+    entrypoint: ["/tmp/desktop-scripts/desktop-init.sh"]
+    command: ["bash"]
+
+---
+# Build Instructions and Examples
+
+# 1. Build container without desktop (minimal)
+docker build \
+  --build-arg ENABLE_DESKTOP=false \
+  --build-arg USERNAME=coder \
+  -t my-dev-container:minimal .
+
+# 2. Build container with basic desktop
+docker build \
+  --build-arg ENABLE_DESKTOP=true \
+  --build-arg ENABLE_NOVNC=true \
+  --build-arg ENABLE_BROWSER=false \
+  --build-arg ENABLE_TILIX=false \
+  --build-arg ENABLE_FONTS=true \
+  --build-arg VNC_PASSWORD=mypassword \
+  --build-arg USERNAME=coder \
+  -t my-dev-container:desktop .
+
+# 3. Build container with full desktop features
+docker build \
+  --build-arg ENABLE_DESKTOP=true \
+  --build-arg ENABLE_NOVNC=true \
+  --build-arg ENABLE_BROWSER=true \
+  --build-arg ENABLE_TILIX=true \
+  --build-arg ENABLE_FONTS=true \
+  --build-arg VNC_PASSWORD=fulldesktop \
+  --build-arg USERNAME=coder \
+  -t my-dev-container:full .
+
+# 4. Run with docker-compose
+docker-compose up dev-container-desktop
+
+# 5. Run standalone container with desktop
+docker run -d \
+  --name my-desktop-container \
+  -p 6080:6080 \
+  -p 5901:5901 \
+  -v $(pwd)/workspace:/home/coder/workspace \
+  -v /tmp:/tmp \
+  --user 1000:1000 \
+  my-dev-container:desktop
+
+# 6. Access the desktop
+# - Web browser: http://localhost:6080
+# - VNC client: localhost:5901
+# - Password: mypassword (or whatever you set)
+
+# 7. For Kubernetes/OpenShift with restricted permissions
+# The container is designed to work with:
+# - Read-only root filesystem
+# - Only /home/coder and /tmp writable
+# - Non-root user execution
+# - No special capabilities required
