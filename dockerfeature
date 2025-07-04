@@ -1,0 +1,65 @@
+# Example Dockerfile with Desktop Feature Toggle
+FROM ubuntu:22.04
+
+# Set build arguments for feature toggles
+ARG ENABLE_DESKTOP=false
+ARG ENABLE_NOVNC=true
+ARG ENABLE_BROWSER=false
+ARG ENABLE_TILIX=false
+ARG ENABLE_FONTS=true
+ARG VNC_PASSWORD=vscode
+ARG NOVNC_PORT=6080
+ARG VNC_PORT=5901
+ARG USERNAME=coder
+
+# Create the coder user early
+RUN groupadd -g 1000 coder && \
+    useradd -u 1000 -g 1000 -m -s /bin/bash coder
+
+# Install basic system dependencies
+RUN apt-get update && \
+    apt-get install -y \
+        sudo \
+        wget \
+        curl \
+        git \
+        build-essential \
+        && rm -rf /var/lib/apt/lists/*
+
+# Give coder sudo privileges
+RUN echo "coder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Copy the desktop installation script
+COPY install-desktop.sh /tmp/install-desktop.sh
+RUN chmod +x /tmp/install-desktop.sh
+
+# Set environment variables for the installation script
+ENV ENABLE_DESKTOP=${ENABLE_DESKTOP}
+ENV ENABLE_NOVNC=${ENABLE_NOVNC}
+ENV ENABLE_BROWSER=${ENABLE_BROWSER}
+ENV ENABLE_TILIX=${ENABLE_TILIX}
+ENV ENABLE_FONTS=${ENABLE_FONTS}
+ENV VNC_PASSWORD=${VNC_PASSWORD}
+ENV NOVNC_PORT=${NOVNC_PORT}
+ENV VNC_PORT=${VNC_PORT}
+ENV USERNAME=${USERNAME}
+
+# Run the desktop installation script
+RUN /tmp/install-desktop.sh
+
+# Set up the working directory
+WORKDIR /home/coder
+
+# Switch to coder user
+USER coder
+
+# Set up environment for desktop if enabled
+RUN if [ "$ENABLE_DESKTOP" = "true" ]; then \
+        echo "source /tmp/desktop-scripts/setup-env.sh" >> ~/.bashrc; \
+    fi
+
+# Default command
+CMD ["bash"]
+
+# If desktop is enabled, you can override the entrypoint:
+# ENTRYPOINT ["/tmp/desktop-scripts/desktop-init.sh"]
