@@ -36,32 +36,32 @@ RUN useradd -u 1000 -m -s /bin/bash coder \
 RUN mkdir -p /home/coder/.local/share/code-server/{User,Machine,extensions,logs} \
     && mkdir -p /home/coder/workspace
 
-# Download and install code-server
-# Replace VERSION with the actual version you want (e.g., 4.101.2)
-ARG CODE_SERVER_VERSION=4.101.2
-RUN wget -O /tmp/code-server.tar.gz \
-    "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz" \
+# Download and install openvscode-server
+# Replace VERSION with the actual version you want (e.g., 1.83.1)
+ARG OPENVSCODE_VERSION=1.83.1
+RUN wget -O /tmp/openvscode-server.tar.gz \
+    "https://github.com/gitpod-io/openvscode-server/releases/download/openvscode-server-v${OPENVSCODE_VERSION}/openvscode-server-v${OPENVSCODE_VERSION}-linux-x64.tar.gz" \
     && cd /home/coder \
-    && tar -xzf /tmp/code-server.tar.gz \
-    && mv code-server-${CODE_SERVER_VERSION}-linux-amd64 .code-server \
-    && rm /tmp/code-server.tar.gz
+    && tar -xzf /tmp/openvscode-server.tar.gz \
+    && mv openvscode-server-v${OPENVSCODE_VERSION}-linux-x64 .openvscode-server \
+    && rm /tmp/openvscode-server.tar.gz
 
 # Set ownership
 RUN chown -R coder:coder /home/coder
 
 # Create startup script
-RUN echo '#!/bin/bash' > /home/coder/start-code-server.sh && \
-    echo 'mkdir -p /home/coder/.local/share/code-server/{User,Machine,extensions,logs}' >> /home/coder/start-code-server.sh && \
-    echo 'exec /home/coder/.code-server/bin/code-server \' >> /home/coder/start-code-server.sh && \
-    echo '    --bind-addr 0.0.0.0:3000 \' >> /home/coder/start-code-server.sh && \
-    echo '    --user-data-dir /home/coder/.local/share/code-server \' >> /home/coder/start-code-server.sh && \
-    echo '    --extensions-dir /home/coder/.local/share/code-server/extensions \' >> /home/coder/start-code-server.sh && \
-    echo '    --disable-telemetry \' >> /home/coder/start-code-server.sh && \
-    echo '    --auth none \' >> /home/coder/start-code-server.sh && \
-    echo '    "$@"' >> /home/coder/start-code-server.sh
+RUN echo '#!/bin/bash' > /home/coder/start-openvscode.sh && \
+    echo 'mkdir -p /home/coder/.local/share/code-server/{User,Machine,extensions,logs}' >> /home/coder/start-openvscode.sh && \
+    echo 'exec /home/coder/.openvscode-server/bin/openvscode-server \' >> /home/coder/start-openvscode.sh && \
+    echo '    --host 0.0.0.0 \' >> /home/coder/start-openvscode.sh && \
+    echo '    --port 3000 \' >> /home/coder/start-openvscode.sh && \
+    echo '    --user-data-dir /home/coder/.local/share/code-server \' >> /home/coder/start-openvscode.sh && \
+    echo '    --extensions-dir /home/coder/.local/share/code-server/extensions \' >> /home/coder/start-openvscode.sh && \
+    echo '    --without-connection-token \' >> /home/coder/start-openvscode.sh && \
+    echo '    "$@"' >> /home/coder/start-openvscode.sh
 
-RUN chmod +x /home/coder/start-code-server.sh \
-    && chown coder:coder /home/coder/start-code-server.sh
+RUN chmod +x /home/coder/start-openvscode.sh \
+    && chown coder:coder /home/coder/start-openvscode.sh
 
 # Switch to coder user
 USER coder
@@ -74,4 +74,4 @@ EXPOSE 3000
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
 # Default command
-CMD ["/home/coder/start-code-server.sh"]
+CMD ["/home/coder/start-openvscode.sh"]
