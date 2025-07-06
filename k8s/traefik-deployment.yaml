@@ -1,0 +1,188 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: traefik-data-pvc
+  namespace: traefik-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard # Adjust based on your cluster's storage class
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: traefik-logs-pvc
+  namespace: traefik-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+  storageClassName: standard # Adjust based on your cluster's storage class
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-config
+  namespace: traefik-system
+data:
+  traefik.yml: |
+    global:
+      checkNewVersion: false
+      sendAnonymousUsage: false
+    
+    api:
+      dashboard: true
+      insecure: true
+    
+    entryPoints:
+      web:
+        address: ":80"
+        http:
+          redirections:
+            entrypoint:
+              to: websecure
+              scheme: https
+      websecure:
+        address: ":443"
+    
+    providers:
+      kubernetesIngress: {}
+      kubernetesCRD: {}
+    
+    certificatesResolvers:
+      letsencrypt:
+        acme:
+          email: your-email@example.com # Change this to your email
+          storage: /data/acme.json
+          httpChallenge:
+            entryPoint: web
+    
+    log:
+      level: INFO
+      filePath: /logs/traefik.log
+    
+    accessLog:
+      filePath: /logs/access.log
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik
+  namespace: traefik-system
+  labels:
+    app: traefik
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traefik
+  template:
+    metadata:
+      labels:
+        app: traefik
+    spec:
+      serviceAccountName: traefik
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+      - name: traefik
+        image: traefik:v3.0
+        args:
+          - --configfile=/config/traefik.yml
+        ports:
+        - name: web
+          containerPort: 80
+        - name: websecure
+          containerPort: 443
+        - name: admin
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: data
+          mountPath: /data
+        - name: logs
+          mountPath: /logs
+        - name: tmp
+          mountPath: /tmp
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+      volumes:
+      - name: config
+        configMap:
+          name: traefik-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: traefik-data-pvc
+      - name: logs
+        persistentVolumeClaim:
+          claimName: traefik-logs-pvc
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: traefik-system
+spec:
+  type: LoadBalancer
+  ports:
+  - name: web
+    port: 80
+    targetPort: 80
+  - name: websecure
+    port: 443
+    targetPort: 443
+  - name: admin
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: traefik
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik-dashboard
+  namespace: traefik-system
+spec:
+  type: ClusterIP
+  ports:
+  - name: admin
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: traefik

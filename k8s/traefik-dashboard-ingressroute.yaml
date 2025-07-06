@@ -1,0 +1,39 @@
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: traefik-dashboard
+  namespace: traefik-system
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`traefik.yourdomain.com`) # Change this to your domain
+      kind: Rule
+      services:
+        - name: traefik-dashboard
+          port: 8080
+      middlewares:
+        - name: auth
+  tls:
+    certResolver: letsencrypt
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: auth
+  namespace: traefik-system
+spec:
+  basicAuth:
+    secret: traefik-dashboard-auth
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: traefik-dashboard-auth
+  namespace: traefik-system
+type: Opaque
+data:
+  # Generated with: htpasswd -nb admin password | base64
+  # Default: admin/password (change this!)
+  users: YWRtaW46JGFwcjEkSDY1dnBkJE8vLnpPSzI5dEJPZy9YSy9kZmRQZjEK
